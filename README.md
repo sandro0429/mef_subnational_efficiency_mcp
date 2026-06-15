@@ -1,100 +1,211 @@
 # MEF Subnational Efficiency MCP
+## Pipeline Multi-Agente de Auditoría del Gasto Público Peruano
 
-Multi-agent AI pipeline para auditar y visualizar la ejecución presupuestal
-subnacional del Perú 2025, combinando datos en tiempo real del portal MEF
-con análisis histórico del presupuesto de 1964 vía OCR.
+> **Curso:** Applied AI Architecture / AI Engineering
+> **Sistema:** Local Multi-Agent Analytics Pipeline via Claude Code CLI + MCP
+> **Periodo fiscal analizado:** 2025
+> **Datos:** Ministerio de Economía y Finanzas (MEF) — Portal de Datos Abiertos del Perú
 
-## Arquitectura
+---
+
+## Descripción del sistema
+
+Pipeline autónomo multi-skill que combina:
+- **MCP Server local** conectado al portal `datosabiertos.gob.pe` (SIAF/MEF 2025)
+- **DuckDB** para extracción y filtrado eficiente sin saturar memoria
+- **PaddleOCR** para digitalización del archivo histórico de Hacienda 1964
+- **Dos Claude Code Skills** cooperativos (Executor + Evaluator)
+- **Dashboard Streamlit** de 4 tabs con análisis dual-era (2025 + 1964)
+
+---
+
+## Decisiones Metodológicas
+
+### Universo de análisis: Gobiernos Subnacionales
+
+El análisis se restringe a Gobiernos Regionales (R) y Locales (M) porque son los niveles donde se concentran los mayores cuellos de botella en ejecución de inversión pública. El Gobierno Central opera bajo lógicas presupuestales distintas — contratos marco, transferencias intergubernamentales, deuda pública — que distorsionarían el diagnóstico de capacidad de gasto territorial.
+
+### Solo Proyectos, no Actividades
+
+El clasificador presupuestal distingue entre actividades (gasto corriente recurrente: planillas, bienes de consumo) y proyectos (inversión pública: obras, equipamiento, infraestructura). Las actividades tienen tasas de ejecución cercanas al 100% por responder a obligaciones contractuales preexistentes. El capital congelado ocurre en proyectos, donde la ejecución depende de licitaciones, expedientes técnicos y supervisión de obra. Incluir actividades inflaría artificialmente la tasa de ejecución y ocultaría los problemas reales de inversión.
+
+### Genérica 6: Adquisición de Activos No Financieros
+
+De todas las genéricas del clasificador presupuestal peruano, la Genérica 6 es la que mejor representa la inversión pública tangible: infraestructura vial, edificaciones, maquinaria, equipamiento hospitalario, sistemas de saneamiento. Es el gasto con impacto directo en provisión de servicios públicos y el que la ciudadanía percibe como "obra pública". Las genéricas 1 (personal) y 5 (bienes y servicios) corresponden a gasto operativo y quedan excluidas del análisis.
+
+### Umbral de PIM: S/. 10 millones
+
+El umbral responde a tres criterios. Primero, entidades con presupuestos menores tienen impacto marginal en el capital congelado total — filtrarlas reduce el ruido sin perder información relevante. Segundo, una entidad con PIM superior a 10M debe tener estructura técnica suficiente para ejecutar; si no lo hace, es un problema de gestión, no de escala. Tercero, el umbral está alineado con el enunciado del proyecto que especifica "presupuestos superiores a 10 millones de soles (PEN)". El filtro se aplica post-agrupación, sobre el PIM acumulado por entidad.
+
+### Agrupación diferenciada por nivel de gobierno
+
+La estructura institucional de Regionales y Locales exige agrupaciones distintas. Los Gobiernos Regionales se identifican por **Pliego** (código institucional único), por lo que la agrupación `PLIEGO + FUNCION` captura cuánto invierte cada gobierno regional en cada sector. Los Gobiernos Locales no tienen un identificador único equivalente, por lo que la agrupación correcta es `DEPARTAMENTO + PROVINCIA + DISTRITO + FUNCION`, lo que permite ver el presupuesto de inversión a nivel distrital por función. Esta granularidad es necesaria para identificar exactamente qué municipio tiene capital congelado en qué sector.
+
+### Métrica principal: Tasa de Ejecución
+
+El devengado absoluto no es comparable entre entidades de distinto tamaño. La tasa de ejecución es relativa al presupuesto asignado, lo que permite comparar gobiernos regionales y locales independientemente de su escala:
+
+```
+Tasa de Ejecución (%) = (Devengado / PIM) × 100
+Capital Congelado     = PIM − Devengado
+```
+
+Un departamento con S/. 500M de PIM al 60% de ejecución tiene más capital congelado en términos absolutos que uno con S/. 50M al 30%, pero el segundo tiene un problema de gestión más severo. La tasa permite identificar ambos tipos de problema simultáneamente.
+
+---
+
+## Estructura del repositorio
 
 ```
 mef_subnational_efficiency_mcp/
+│
+├── app.py                          # Dashboard Streamlit (4 tabs)
+├── README.md
+├── requirements.txt
+│
+├── .claude/
+│   └── skills/
+│       ├── executor_skill.json     # Agente de procesamiento y construcción
+│       └── evaluator_skill.json    # Agente de auditoría y optimización UX
+│
 ├── src/
-│   ├── utils.py               # Configuración base, rutas y logging
-│   ├── data_pipeline.py       # Descarga y limpieza de datos 2025 (streaming)
-│   ├── analytical_engine.py   # KPIs, rankings y Hall of Shame
-│   ├── mcp_server.py          # Servidor MCP — herramientas para Claude Code
-│   └── ocr_engine.py          # Extracción de tablas del PDF histórico 1964
-├── app.py                     # Dashboard Streamlit (4 tabs)
+│   ├── mcp_server.py               # Servidor MCP local (8 herramientas)
+│   ├── data_pipeline.py            # Pipeline DuckDB anti-context-flooding
+│   ├── ocr_engine.py               # PaddleOCR — 39 páginas del PDF 1964
+│   ├── analytical_engine.py        # Métricas: tasa ejecución, capital congelado, rankings
+│   └── utils.py                    # Logging, constantes, helpers de periodo
+│
 ├── data/
-│   ├── raw_pdfs/              # PDF histórico 1964
-│   ├── snapshots/             # Schema del CSV (primeras 10 filas)
-│   └── processed/             # Parquets generados por el pipeline
-├── .claude/skills/            # Skills del Executor y Evaluator
-└── logs/                      # Logs rotativos del sistema
+│   ├── raw_pdfs/                   # hacienda_1964.pdf (archivo histórico)
+│   ├── snapshots/                  # Schema JSON (10 filas del CSV MEF)
+│   └── processed/                  # Parquets reducidos para el dashboard
+│
+└── video/
+    └── link.txt                    # URL del video de presentación (5 min)
 ```
 
-## Pipeline de datos
+---
 
-```
-CSV remoto MEF (~1 GB)
-    ↓ streaming chunk a chunk
-    ↓ filtro al vuelo: año=2025, mes=12, PIM ≥ S/.10M
-    ↓ solo columnas relevantes en RAM
-    ↓ cast numérico + métricas
-    → data/processed/budget_2025_12.parquet
-    → data/processed/kpis_2025_12.json
-    → data/processed/ranking_dept_2025_12.parquet
-    → data/processed/hall_of_shame_2025_12.parquet
-    → data/processed/distribucion_funcional_2025_12.parquet
-    → data/processed/distribucion_sector_2025_12.parquet
-```
+## Arquitectura Multi-Agente
 
-## Métricas definidas
+### Executor Skill (`.claude/skills/executor_skill.json`)
+Agente de ingeniería de datos. Sus pasos:
+1. Usa MCP para tomar snapshot del CSV (10 filas) — sin descargar el dataset completo
+2. Ejecuta `data_pipeline.py` con DuckDB para filtrar y agregar datos
+3. Corre `ocr_engine.py` sobre ≥15 páginas del PDF 1964
+4. Genera el borrador del dashboard `app.py`
 
-| Métrica | Fórmula | Uso |
-|---|---|---|
-| Avance (%) | Devengado / PIM × 100 | KPI principal |
-| Saldo no devengado | PIM − Devengado | Capital congelado |
-| Hall of Shame | PIM ≥ S/.10M y avance < 40% | Tab 3 |
+### Evaluator Skill (`.claude/skills/evaluator_skill.json`)
+Agente auditor y optimizador. Sus pasos:
+1. Extrae muestra independiente del portal vía MCP y cruza vs Parquet del Executor
+2. Recalcula métricas para detectar drift de cálculo
+3. Inyecta `@st.cache_data`, manejo de errores y CSS en `app.py`
+4. Genera reporte de auditoría en `data/processed/evaluator_report_{period}.md`
 
-El umbral del Hall of Shame se fijó en **40%** porque diciembre es el último
-mes del año fiscal — una entidad con más de S/.10M presupuestados y menos
-del 40% ejecutado representa subejecución crítica.
+---
+
+## Resultados 2025
+
+| Indicador | Valor |
+|-----------|-------|
+| PIM Total (Regionales + Locales) | S/. 29.19B |
+| Devengado Total | S/. 24.55B |
+| Tasa de Ejecución Nacional | 84.1% |
+| Capital Congelado | S/. 4.64B |
+| Tasa Regionales | 94.1% |
+| Tasa Locales | 73.9% |
+| Entidades en Hall of Shame | 32 |
+| Páginas 1964 procesadas con OCR | 39 |
+| Bloques de texto extraídos | 2,207 |
+
+---
 
 ## Instalación
 
 ```bash
-git clone https://github.com/sandro0429/mef_subnational_efficiency_mcp
+git clone https://github.com/[usuario]/mef_subnational_efficiency_mcp
 cd mef_subnational_efficiency_mcp
+conda create -n mef_mcp python=3.11 -y
+conda activate mef_mcp
 pip install -r requirements.txt
+conda install -c conda-forge poppler -y
 ```
+
+---
 
 ## Uso
 
+### 1. Pipeline de datos
 ```bash
-# 1. Generar Parquet de datos 2025
-python -m src.data_pipeline --period 2025-12
+python -m src.data_pipeline --period 2025
+```
 
-# 2. Calcular KPIs, rankings y Hall of Shame
-python -m src.analytical_engine --period 2025-12
+### 2. Motor analítico
+```bash
+python -m src.analytical_engine --period 2025
+```
 
-# 3. Correr el dashboard
+### 3. OCR histórico 1964
+```bash
+python -m src.ocr_engine --pages 1000-1038 --pdf data/raw_pdfs/hacienda_1964.pdf
+```
+
+### 4. Dashboard
+```bash
 streamlit run app.py
 ```
 
-## Fuentes de datos
+### 5. Via Claude Code CLI
+```bash
+claude "run executor_skill for period 2025"
+claude "run evaluator_skill for period 2025"
+```
 
-| Fuente | URL | Descripción |
-|---|---|---|
-| MEF — Gasto Mensual 2025 | fs.datosabiertos.mef.gob.pe | CSV ~1 GB, actualización mensual |
-| Portal CKAN | datosabiertos.gob.pe | API de búsqueda de datasets |
-| PDF histórico 1964 | fuenteshistoricasdelperu.com | Presupuesto General de la República |
+---
 
-## Columnas del dataset 2025
+## MCP Server — Herramientas disponibles
 
-El CSV del MEF contiene 63 columnas. El pipeline normaliza las siguientes:
+| Herramienta | Descripción |
+|-------------|-------------|
+| `buscar_datasets` | Busca en datosabiertos.gob.pe vía CKAN API |
+| `obtener_detalle_dataset` | URLs de descarga por dataset ID |
+| `inspeccionar_esquema_csv` | Snapshot de 10 filas sin descargar el CSV completo |
+| `consultar_datastore_filtrado` | Query SQL directa al datastore CKAN |
+| `descargar_documento_1964` | Verifica PDF histórico local |
+| `procesar_ocr_paginas_1964` | Lanza PaddleOCR sobre páginas seleccionadas |
+| `ejecutar_pipeline_datos` | Corre data_pipeline.py como proceso externo |
+| `ejecutar_analytical_engine` | Corre analytical_engine.py como proceso externo |
 
-| Columna original | Nombre normalizado | Tipo |
-|---|---|---|
-| ANO_EJE | anio | str |
-| MES_EJE | mes | str |
-| NIVEL_GOBIERNO_NOMBRE | nivel_gobierno | str |
-| SECTOR_NOMBRE | sector | str |
-| PLIEGO_NOMBRE | entidad | str |
-| EJECUTORA_NOMBRE | unidad_ejecutora | str |
-| DEPARTAMENTO_EJECUTORA_NOMBRE | departamento | str |
-| FUNCION_NOMBRE | funcion | str |
-| MONTO_PIM | pim | float |
-| MONTO_DEVENGADO | devengado | float |
-| MONTO_GIRADO | girado | float |
+---
+
+## Principio Anti-Context-Flooding
+
+El sistema NUNCA carga el CSV completo (9.8GB) en el contexto del LLM:
+
+```
+MCP inspecciona esquema (10 filas snapshot)
+    ↓
+DuckDB ejecuta query SQL con filtros directamente sobre el CSV
+    ↓
+Polars procesa el resultado y guarda Parquet reducido (~20KB)
+    ↓
+Streamlit lee solo el Parquet con @st.cache_data
+```
+
+---
+
+## Dashboard — 4 Tabs
+
+| Tab | Contenido |
+|-----|-----------|
+| 📊 Resumen Ejecutivo | KPIs nacionales 2025 + análisis histórico 1964 (OCR) |
+| 🗺️ Distribución Territorial | Rankings regionales y locales por tasa de ejecución y función |
+| 🚨 Hall of Shame | Entidades con PIM > 10M y ejecución < 40% |
+| 🤖 Audit Log & Playground | Reporte del Evaluator + CLI reference |
+
+---
+
+## Video de presentación
+
+Ver `video/link.txt`
 
