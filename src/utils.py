@@ -1,18 +1,18 @@
 """
-utils.py — Helpers, logging estructurado y constantes del sistema.
+utils.py — Configuración central, constantes y helpers del sistema.
 
-Responsabilidades:
-- Configurar loguru para logs con rotación diaria en logs/
-- Constantes del portal (base URLs, dataset IDs)
-- Funciones de utilidad compartidas entre módulos
+Contiene:
+- Rutas del proyecto
+- URLs del portal de datos abiertos
+- Configuración de logging
+- Helpers de periodo
 """
 
-import os
 from pathlib import Path
 from loguru import logger
 
 # ── Rutas base ────────────────────────────────────────────────────────────────
-ROOT = Path(__file__).parent.parent
+ROOT         = Path(__file__).parent.parent
 DATA_RAW     = ROOT / "data" / "raw_pdfs"
 DATA_SNAP    = ROOT / "data" / "snapshots"
 DATA_PROC    = ROOT / "data" / "processed"
@@ -24,16 +24,12 @@ for _dir in (DATA_RAW, DATA_SNAP, DATA_PROC, LOGS_DIR):
 # ── Portal CKAN ───────────────────────────────────────────────────────────────
 PORTAL_BASE   = "https://datosabiertos.gob.pe"
 CKAN_API      = f"{PORTAL_BASE}/api/3/action"
-DATASTORE_API = f"{CKAN_API}/datastore_search_sql"
 
-# Palabras clave para búsqueda del dataset SIAF 2025
-SIAF_KEYWORDS = ["ejecucion presupuestal", "SIAF", "MEF", "2025", "devengado"]
-
-# URL directa del CSV de Gasto Mensual 2025 — Portal MEF
-CSV_2025_URL = "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.csv"
+# URL directa del CSV de Gasto Mensual 2025
+CSV_2025_URL  = "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.csv"
 
 # URL del PDF histórico 1964
-PDF_1964_URL = (
+PDF_1964_URL  = (
     "https://fuenteshistoricasdelperu.com/2021/08/12/"
     "ministerio-de-hacienda-y-comercio-presupuesto-balance-y-cuenta-general-de-la-republica/"
 )
@@ -41,7 +37,6 @@ PDF_1964_LOCAL = DATA_RAW / "hacienda_1964.pdf"
 
 # ── Logging ───────────────────────────────────────────────────────────────────
 def setup_logger(name: str, period: str = "general"):
-    """Configura loguru con rotación diaria y formato estructurado."""
     log_path = LOGS_DIR / f"{name}_{period}.log"
     logger.remove()
     logger.add(
@@ -50,6 +45,7 @@ def setup_logger(name: str, period: str = "general"):
         retention="7 days",
         format="{time:YYYY-MM-DD HH:mm:ss} | {level:<8} | {name}:{line} | {message}",
         level="DEBUG",
+        encoding="utf-8",
     )
     logger.add(
         lambda msg: print(msg, end=""),
@@ -63,12 +59,10 @@ def setup_logger(name: str, period: str = "general"):
 # ── Helpers de periodo ────────────────────────────────────────────────────────
 def parse_period(period: str) -> dict:
     """
-    Convierte strings de periodo a año/mes para queries.
-
-    Ejemplos:
-        '2025-12' -> {'year': 2025, 'month': 12, 'quarter': None}
-        '2025-Q4' -> {'year': 2025, 'month': None, 'quarter': 4}
-        '2025'    -> {'year': 2025, 'month': None, 'quarter': None}
+    Convierte strings de periodo a año/mes.
+    '2025'    → {'year': 2025, 'month': None, 'quarter': None}
+    '2025-9'  → {'year': 2025, 'month': 9, 'quarter': None}
+    '2025-Q3' → {'year': 2025, 'month': None, 'quarter': 3}
     """
     period = period.strip().upper()
     result = {"year": None, "month": None, "quarter": None, "raw": period}
@@ -87,13 +81,15 @@ def parse_period(period: str) -> dict:
     return result
 
 
-def parquet_path(period: str) -> Path:
-    """Devuelve la ruta del archivo Parquet procesado para un periodo."""
-    safe = period.replace("-", "_").replace(" ", "_")
-    return DATA_PROC / f"budget_2025_{safe}.parquet"
+# ── Rutas de archivos procesados ──────────────────────────────────────────────
+def parquet_regionales(period: str) -> Path:
+    safe = period.replace("-", "_")
+    return DATA_PROC / f"regionales_{safe}.parquet"
 
+def parquet_locales(period: str) -> Path:
+    safe = period.replace("-", "_")
+    return DATA_PROC / f"locales_{safe}.parquet"
 
 def snapshot_path(period: str) -> Path:
-    """Devuelve la ruta del snapshot JSON para un periodo."""
     safe = period.replace("-", "_")
     return DATA_SNAP / f"schema_{safe}.json"
