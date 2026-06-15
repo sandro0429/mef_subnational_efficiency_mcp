@@ -29,6 +29,9 @@ DATASTORE_API = f"{CKAN_API}/datastore_search_sql"
 # Palabras clave para búsqueda del dataset SIAF 2025
 SIAF_KEYWORDS = ["ejecucion presupuestal", "SIAF", "MEF", "2025", "devengado"]
 
+# URL directa del CSV de Gasto Mensual 2025 — Portal MEF
+CSV_2025_URL = "https://fs.datosabiertos.mef.gob.pe/datastorefiles/2025-Gasto-Mensual.csv"
+
 # URL del PDF histórico 1964
 PDF_1964_URL = (
     "https://fuenteshistoricasdelperu.com/2021/08/12/"
