@@ -207,5 +207,5 @@ Streamlit lee solo el Parquet con @st.cache_data
 
 ## Video de presentación
 
-Ver `video/link.txt`
+Ver `https://drive.google.com/drive/folders/1ymrC1IwmIt8bWQYrIc5TzUo0CNfeqXek?usp=sharing`
 
