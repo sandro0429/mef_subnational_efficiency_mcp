@@ -1,0 +1,85 @@
+{
+  "name": "executor_skill",
+  "version": "1.0.0",
+  "description": "Data Engineering & Production Engine. Extrae datos del portal MEF, ejecuta pipelines locales de transformación, corre el motor OCR sobre el archivo 1964, y construye el borrador del dashboard Streamlit.",
+  "trigger": "executor_skill|mef_update|run executor",
+  "model": "claude-opus-4-5",
+  "system_prompt": "Eres el Executor Agent del pipeline MEF Subnational Efficiency. Tu función es actuar como ingeniero de datos senior. NUNCA ingieras datasets CSV/JSON completos en el contexto. Siempre sigue este protocolo:\n\n1. USA las herramientas MCP para inspeccionar esquemas y tomar snapshots mínimos (5-10 filas).\n2. ESCRIBE scripts Python locales (pandas/polars/duckdb) para filtrar, agregar y guardar resultados en data/processed/ como archivos Parquet o CSV pequeños.\n3. EJECUTA src/ocr_engine.py para procesar mínimo 15 páginas del PDF 1964 con PaddleOCR.\n4. CALCULA las métricas base: Avance% = (Devengado/PIM)*100 y Saldo No Devengado = PIM - Devengado.\n5. GENERA el borrador de app.py con los 4 tabs de Streamlit usando @st.cache_data en todas las cargas.\n6. Filtra entidades con PIM > 10,000,000 PEN para el Hall of Shame (Tab 3).\n7. Guarda logs estructurados en cada paso usando loguru.",
+  "parameters": {
+    "period": {
+      "type": "string",
+      "description": "Periodo fiscal a procesar. Formatos válidos: '2025-12', '2025-Q4', '2025'. Controla qué slice de datos se descarga del portal.",
+      "required": true,
+      "default": "2025-12"
+    },
+    "min_pim": {
+      "type": "number",
+      "description": "Umbral mínimo de PIM en soles para filtrar entidades. Por defecto 10 millones.",
+      "required": false,
+      "default": 10000000
+    },
+    "ocr_pages": {
+      "type": "array",
+      "description": "Lista de índices de páginas a procesar con PaddleOCR del PDF 1964. Mínimo 15 páginas.",
+      "required": false,
+      "default": [1,2,3,4,5,6,7,8,9,10,11,12,13,14,15]
+    },
+    "force_refresh": {
+      "type": "boolean",
+      "description": "Si es true, re-descarga los datos aunque existan snapshots en caché.",
+      "required": false,
+      "default": false
+    }
+  },
+  "workflow": [
+    {
+      "step": 1,
+      "name": "schema_inspection",
+      "description": "Usar MCP tool inspeccionar_esquema_csv para mapear columnas y tipos del dataset SIAF 2025 sin descargarlo completo."
+    },
+    {
+      "step": 2,
+      "name": "snapshot_save",
+      "description": "Guardar el snapshot (5-10 filas) en data/snapshots/ como JSON para referencia de columnas."
+    },
+    {
+      "step": 3,
+      "name": "local_pipeline",
+      "description": "Escribir y ejecutar src/data_pipeline.py con polars/duckdb para filtrar por periodo, calcular métricas y guardar data/processed/budget_2025_{period}.parquet."
+    },
+    {
+      "step": 4,
+      "name": "ocr_1964",
+      "description": "Ejecutar src/ocr_engine.py sobre el PDF en data/raw_pdfs/. Guardar data/processed/ocr_1964_extracted.parquet con las tablas parseadas."
+    },
+    {
+      "step": 5,
+      "name": "analytical_engine",
+      "description": "Ejecutar src/analytical_engine.py para producir métricas finales, rankings y resúmenes estadísticos."
+    },
+    {
+      "step": 6,
+      "name": "app_draft",
+      "description": "Generar el borrador de app.py con los 4 tabs, KPIs, mapas y matrices interactivas."
+    }
+  ],
+  "mcp_tools_allowed": [
+    "buscar_datasets",
+    "obtener_detalle_dataset",
+    "descargar_documento_1964",
+    "listar_entidades_publicas",
+    "inspeccionar_esquema_csv",
+    "consultar_datastore_filtrado",
+    "procesar_ocr_paginas_1964",
+    "descargar_y_analizar_estadisticas"
+  ],
+  "output": {
+    "files": [
+      "data/processed/budget_2025_{period}.parquet",
+      "data/processed/ocr_1964_extracted.parquet",
+      "data/snapshots/schema_{period}.json",
+      "app.py"
+    ],
+    "log": "logs/executor_{period}.log"
+  }
+}
